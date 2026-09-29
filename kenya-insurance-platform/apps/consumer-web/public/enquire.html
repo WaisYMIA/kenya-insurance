@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Other covers — guided enquiry</title>
+<link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+<header class="header"><div class="header-inner">
+  <div class="logo">bima<span>hub</span></div>
+  <nav class="navlinks">
+    <a href="index.html">Home</a>
+    <a href="learn.html">Learn</a>
+    <a href="navigator.html">Insurance Navigator</a>
+    <a href="products.html">Products</a>
+    <a href="quote.html">Motor quote</a>
+    <a href="enquire.html" class="active">Other covers</a>
+    <a href="claim.html">Report a claim</a>
+  </nav>
+</div></header>
+<main class="container"><section class="section">
+  <span class="eyebrow">Guided enquiry</span>
+  <div class="stepper" id="stepper"></div>
+  <div id="wizard"></div>
+</section></main>
+
+<script src="shared/api.js"></script>
+<script>
+let FLOWS = null; // { lines: {MEDICAL:{...}, ...}, general: { classes: [{name, products:[{product_id,name,questions}]}], fallback_questions } }
+const params = new URLSearchParams(location.search);
+let line = params.get("line");
+let path = { className: null, product: null, qs: null, qIndex: 0 };
+const answers = {};
+const wizard = document.getElementById("wizard");
+const stepper = document.getElementById("stepper");
+const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const startedEvent = () => Api.recordEvent("WEB_ENQUIRY_STARTED", { line: line || "PICKER" });
+
+function renderPicker() {
+  stepper.innerHTML = "";
+  const lineIcons = { MEDICAL: "🩺", WIBA: "👷", LIFE: "🛡️", HOME: "🏠", TRAVEL: "✈️", PENSION_ANNUITIES: "🌅" };
+  const lineButtons = Object.entries(FLOWS.lines).filter(([k]) => k !== "GENERAL").map(([k, v]) => `<button class="option-btn" data-line="${k}">${lineIcons[k] || "📄"} ${v.label}</button>`).join("");
+  wizard.innerHTML = `<div class="question-card"><h3>What would you like cover for?</h3>
+    <div class="helper">Pick one — we'll ask a few short questions, then an adviser follows up with you.</div>
+    <div class="options">
+      <a class="option-btn" href="quote.html" style="text-decoration:none;color:inherit">🚗 Motor (get a quote now)</a>
+      ${lineButtons}
+      <button class="option-btn" data-line="GENERAL">🏢 Business &amp; general (${FLOWS.general.classes.length} classes)</button>
+    </div></div>`;
+  wizard.querySelectorAll("[data-line]").forEach((b) => b.addEventListener("click", () => { line = b.dataset.line; path = { className: null, product: null, qs: null, qIndex: 0 }; startedEvent(); renderStart(); }));
+}
+
+function renderStart() {
+  if (line === "GENERAL") return renderClassPicker();
+  path.qs = FLOWS.lines[line].qs; path.qIndex = 0; renderQuestion();
+}
+
+function renderClassPicker() {
+  stepper.innerHTML = "";
+  wizard.innerHTML = `<div class="question-card"><h3>What kind of cover?</h3>
+    <div class="options">${FLOWS.general.classes.map((c) => `<button class="option-btn" data-c="${esc(c.name)}">${esc(c.name)}${c.intro ? "" : ""}</button>`).join("")}</div></div>`;
+  wizard.querySelectorAll("[data-c]").forEach((b) => b.addEventListener("click", () => { path.className = b.dataset.c; renderProductPicker(); }));
+}
+function renderProductPicker() {
+  const cls = FLOWS.general.classes.find((c) => c.name === path.className);
+  wizard.innerHTML = `<div class="question-card"><h3>Which ${esc(path.className)} cover?</h3>
+    ${cls.intro ? `<div class="helper">${esc(cls.intro)}</div>` : ""}
+    <div class="options">${cls.products.map((p) => `<button class="option-btn" data-p="${esc(p.product_id)}">${esc(p.name)}</button>`).join("")}
+      <button class="option-btn" data-p="__unsure">Not sure yet</button></div></div>`;
+  wizard.querySelectorAll("[data-p]").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.p === "__unsure") { path.product = null; path.qs = FLOWS.general.fallback_questions; }
+    else { path.product = cls.products.find((p) => p.product_id === b.dataset.p); answers.product_id = path.product.product_id; path.qs = path.product.questions; }
+    answers.product_class = path.className; path.qIndex = 0; renderQuestion();
+  }));
+}
+
+function renderQuestion() {
+  stepper.innerHTML = [...path.qs, {}].map((_, i) => `<div class="step-dot ${i < path.qIndex ? "done" : ""}"></div>`).join("");
+  if (path.qIndex >= path.qs.length) return renderContact();
+  const q = path.qs[path.qIndex];
+  const next = (v) => { answers[q.id] = v; path.qIndex++; if (path.qIndex === 1) Api.recordEvent("WEB_CONTACT_STEP", { line }); renderQuestion(); };
+  if (q.type === "choice") {
+    wizard.innerHTML = `<div class="question-card"><h3>${esc(q.text)}</h3><div class="options">
+      ${q.options.map((o) => `<button class="option-btn" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div></div>`;
+    wizard.querySelectorAll(".option-btn").forEach((b) => b.addEventListener("click", () => next(b.dataset.v)));
+  } else {
+    wizard.innerHTML = `<div class="question-card"><h3>${esc(q.text)}</h3>
+      <div class="field"><input type="text" id="ans" placeholder="${esc(q.placeholder || "")}"></div>
+      <button class="btn btn-primary" id="nextBtn">Next →</button></div>`;
+    document.getElementById("nextBtn").addEventListener("click", () => next(document.getElementById("ans").value.trim() || "not provided"));
+    document.getElementById("ans").addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("nextBtn").click(); });
+  }
+}
+
+function renderContact() {
+  const label = line === "GENERAL" ? (path.product ? path.product.name : path.className) : FLOWS.lines[line].label;
+  wizard.innerHTML = `<form class="question-card" id="contactForm">
+    <h3>Last step — how do we reach you?</h3>
+    <div class="helper">An adviser will contact you about ${esc(label)}.</div>
+    <div class="field"><label for="n">Your name</label><input type="text" id="n" required></div>
+    <div class="field"><label for="p">WhatsApp / phone number</label><input type="text" id="p" placeholder="07xx xxx xxx" required></div>
+    <div class="field"><label for="e">Email (optional)</label><input type="text" id="e"></div>
+    <div class="field"><label style="display:flex;gap:8px;font-weight:500"><input type="checkbox" id="c" required style="width:auto">
+      I agree to my details being stored and shared with an adviser to follow up this request.</label></div>
+    <button class="btn btn-primary" type="submit" style="width:100%">Send to an adviser</button>
+    <div id="err" style="color:#b3261e;margin-top:8px"></div></form>`;
+  document.getElementById("contactForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    try {
+      await Api.createLead({ product_line: line, contact_name: document.getElementById("n").value.trim(),
+        contact_phone: document.getElementById("p").value.trim(), contact_email: document.getElementById("e").value.trim() || undefined,
+        answers, consent_given: document.getElementById("c").checked, source_channel: "WEB" });
+      stepper.innerHTML = "";
+      wizard.innerHTML = `<div class="question-card"><h3>Thank you 🎉</h3>
+        <p>Your details have been sent to an adviser, who will contact you shortly about ${esc(label)}.</p>
+        <a class="btn btn-ghost" href="index.html">Back home</a></div>`;
+    } catch (err) { document.getElementById("err").textContent = err.message === "CONSENT_REQUIRED" ? "Please tick the consent box." : "Couldn't send: " + err.message; }
+  });
+}
+
+(async () => {
+  try { FLOWS = await Api.getFlows(); }
+  catch (e) { wizard.innerHTML = `<div class="card"><h3>Couldn't load the questions</h3><p>Is the API running at ${window.API_BASE}?</p></div>`; return; }
+  if (line && line !== "GENERAL" && FLOWS.lines[line]) { startedEvent(); renderStart(); }
+  else if (line === "GENERAL") { startedEvent(); renderClassPicker(); }
+  else renderPicker();
+})();
+</script>
+</body>
+</html>

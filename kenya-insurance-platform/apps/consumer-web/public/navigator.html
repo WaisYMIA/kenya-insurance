@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insurance Navigator</title>
+<link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+<header class="header"><div class="header-inner">
+  <div class="logo">bima<span>hub</span></div>
+  <nav class="navlinks">
+    <a href="index.html">Home</a>
+    <a href="learn.html">Learn</a>
+    <a href="navigator.html" class="active">Insurance Navigator</a>
+    <a href="products.html">Products</a>
+    <a href="quote.html">Motor quote</a>
+    <a href="enquire.html">Other covers</a>
+  </nav>
+<a href="claim.html">Report a claim</a>
+  </div></header>
+
+<main class="container">
+  <section class="section">
+    <span class="eyebrow">WEB-004 · Insurance Navigator</span>
+    <div class="stepper" id="stepper"></div>
+    <div id="wizard"></div>
+    <div id="summary" hidden></div>
+  </section>
+</main>
+
+<script src="shared/api.js"></script>
+<script>
+const questions = [
+  { id: "owns_vehicle", text: "Do you own or ride a motorcycle or car?", helper: "This tells us whether motor risk applies to you.", options: ["Yes", "No"] },
+  { id: "vehicle_use", text: "How is it mainly used?", helper: "Private use and commercial/PSV use carry different risk.", options: ["Private / personal", "Commercial / boda boda / PSV"] },
+  { id: "dependents", text: "Do others depend on your income?", helper: "This affects whether life or personal accident cover is relevant.", options: ["Yes", "No"] },
+];
+
+let assessmentId = null;
+let step = 0;
+const answers = {};
+
+function renderStepper() {
+  const el = document.getElementById("stepper");
+  el.innerHTML = questions.map((_, i) => `<div class="step-dot ${i < step ? "done" : ""}"></div>`).join("");
+}
+
+function renderQuestion() {
+  renderStepper();
+  const wizard = document.getElementById("wizard");
+  if (step >= questions.length) return renderSummary();
+  const q = questions[step];
+  wizard.innerHTML = `
+    <div class="question-card">
+      <h3>${q.text}</h3>
+      <div class="helper">${q.helper}</div>
+      <div class="options">
+        ${q.options.map((o) => `<button class="option-btn" data-value="${o}">${o}</button>`).join("")}
+      </div>
+    </div>`;
+  wizard.querySelectorAll(".option-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const value = btn.dataset.value;
+      answers[q.id] = value;
+      try {
+        await Api.saveAnswer(assessmentId, q.id, value);
+      } catch (e) { console.warn("Could not persist answer:", e.message); }
+      step += 1;
+      renderQuestion();
+    });
+  });
+}
+
+function renderSummary() {
+  document.getElementById("wizard").hidden = true;
+  const summary = document.getElementById("summary");
+  summary.hidden = false;
+  const needsMotor = answers.owns_vehicle === "Yes";
+  const commercial = answers.vehicle_use && answers.vehicle_use.includes("Commercial");
+  summary.innerHTML = `
+    <div class="question-card" style="max-width:640px">
+      <h3>Your risk summary</h3>
+      <div class="helper">Assessment ID: ${assessmentId || "(offline)"}
+        — based on your answers, not a quote or advice.</div>
+      ${needsMotor ? `
+        <div class="card" style="margin-bottom:12px">
+          <h3>Motor risk identified</h3>
+          <p>${commercial
+            ? "Commercial/PSV use needs a commercial motor product — this pilot currently supports the private-use motorcycle journey only; you'll be referred to an adviser."
+            : "You're a candidate for the Motorcycle Third Party or Comprehensive pilot product."}</p>
+        </div>` : ""}
+      <div class="disclosure">This is an educational summary, not underwriting advice. Final eligibility,
+        pricing and terms are decided by the approved rules and rating engine, and by the insurer.</div>
+      <a class="btn btn-primary" href="quote.html">Continue to a motor quote →</a>
+      <a class="btn btn-ghost" href="index.html" style="margin-left:8px">Back home</a>
+    </div>`;
+}
+
+(async function init() {
+  try {
+    const created = await Api.createAssessment();
+    assessmentId = created.assessment_id;
+  } catch (e) {
+    console.warn("API not reachable — continuing in offline demo mode:", e.message);
+  }
+  renderQuestion();
+})();
+</script>
+</body>
+</html>

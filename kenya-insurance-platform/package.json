@@ -1,0 +1,9 @@
+{
+  "name": "kenya-insurance-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ]
+}

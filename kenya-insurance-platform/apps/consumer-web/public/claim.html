@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report a claim</title>
+<link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+<header class="header"><div class="header-inner">
+  <div class="logo">bima<span>hub</span></div>
+  <nav class="navlinks">
+    <a href="index.html">Home</a><a href="learn.html">Learn</a><a href="navigator.html">Insurance Navigator</a>
+    <a href="products.html">Products</a><a href="quote.html">Motor quote</a><a href="enquire.html">Other covers</a><a href="claim.html" class="active">Report a claim</a>
+  </nav>
+</div></header>
+<main class="container"><section class="section">
+  <span class="eyebrow">Claims — first notice of loss</span>
+  <div id="wizard"></div>
+  <div class="card" style="margin-top:24px;max-width:480px">
+    <h3>Check an existing claim</h3>
+    <div class="field"><label for="sref">Claim reference</label><input type="text" id="sref" placeholder="CL-XXXXXX"></div>
+    <div class="field"><label for="sphone">Phone used when reporting</label><input type="text" id="sphone" placeholder="07xx xxx xxx"></div>
+    <button class="btn btn-ghost" id="sbtn">Check status</button>
+    <div id="sresult" style="margin-top:10px;font-size:14px"></div>
+  </div>
+</section></main>
+<script src="shared/api.js"></script>
+<script>
+const wizard = document.getElementById("wizard");
+const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const QS = [
+  { id: "Q-C1", text: "What is the claim about?", type: "choice", options: ["Motor", "Medical", "Home / property", "Theft / burglary", "Business / liability", "Personal accident / work injury", "Travel", "Other"] },
+  { id: "Q-C2", text: "What is your policy number?", type: "text", placeholder: "or type 'don't know'" },
+  { id: "Q-C3", text: "When did it happen?", type: "text", placeholder: "e.g. 25 Sep 2026" },
+  { id: "Q-C4", text: "Where did it happen?", type: "text", placeholder: "Town / road / place" },
+  { id: "Q-C5", text: "Briefly, what happened?", type: "text", placeholder: "A few sentences" },
+  { id: "Q-C6", text: "Was anyone injured?", type: "choice", options: ["Yes", "No"] },
+  { id: "Q-C7", text: "Police / OB number, if reported?", type: "text", placeholder: "or type 'none'" },
+];
+let idx = 0; const answers = {};
+function render() {
+  if (idx >= QS.length) return renderContact();
+  const q = QS[idx];
+  const next = (v) => { answers[q.id] = v; idx++; render(); };
+  if (q.type === "choice") wizard.innerHTML = `<div class="question-card"><h3>${esc(q.text)}</h3><div class="options">${q.options.map((o) => `<button class="option-btn" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div></div>`;
+  else wizard.innerHTML = `<div class="question-card"><h3>${esc(q.text)}</h3><div class="field"><input type="text" id="ans" placeholder="${esc(q.placeholder || "")}"></div><button class="btn btn-primary" id="nextBtn">Next →</button></div>`;
+  wizard.querySelectorAll(".option-btn").forEach((b) => b.addEventListener("click", () => next(b.dataset.v)));
+  const nb = document.getElementById("nextBtn"); if (nb) nb.addEventListener("click", () => next(document.getElementById("ans").value.trim() || "not provided"));
+}
+function renderContact() {
+  wizard.innerHTML = `<form class="question-card" id="f">
+    <h3>Your contact details</h3>
+    <div class="field"><label for="n">Your name</label><input type="text" id="n" required></div>
+    <div class="field"><label for="p">Phone number</label><input type="text" id="p" placeholder="07xx xxx xxx" required></div>
+    <div class="field"><label for="e">Email (optional)</label><input type="text" id="e"></div>
+    <div class="field"><label style="display:flex;gap:8px;font-weight:500"><input type="checkbox" id="c" required style="width:auto"> I agree to my details being used to handle this claim notification.</label></div>
+    <button class="btn btn-primary" type="submit" style="width:100%">Submit claim notice</button>
+    <div id="err" style="color:#b3261e;margin-top:8px"></div></form>`;
+  document.getElementById("f").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const r = await Api.createClaim({ contact_name: document.getElementById("n").value.trim(), contact_phone: document.getElementById("p").value.trim(),
+        contact_email: document.getElementById("e").value.trim() || undefined, consent_given: document.getElementById("c").checked, answers });
+      wizard.innerHTML = `<div class="question-card"><h3>Recorded — reference ${esc(r.claim_ref)}</h3>
+        <p>An adviser will contact you shortly. This is not a decision on your claim.</p>
+        ${r.evidence.length ? `<h4>Please have these ready:</h4><ul>${r.evidence.slice(0, 8).map((ev) => `<li>${esc(ev.evidence)}</li>`).join("")}</ul>` : ""}
+        <a class="btn btn-ghost" href="index.html">Back home</a></div>`;
+    } catch (err) { document.getElementById("err").textContent = "Couldn't submit: " + err.message; }
+  });
+}
+render();
+document.getElementById("sbtn").addEventListener("click", async () => {
+  const el = document.getElementById("sresult");
+  try { const r = await Api.getClaimStatus(document.getElementById("sref").value.trim(), document.getElementById("sphone").value.trim());
+    el.textContent = `${r.status} (reported ${new Date(r.reported_at).toLocaleDateString()})`; }
+  catch { el.textContent = "Not found — check the reference and phone number."; }
+});
+</script>
+</body>
+</html>

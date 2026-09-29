@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motor Quote Intake</title>
+<link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+<header class="header"><div class="header-inner">
+  <div class="logo">bima<span>hub</span></div>
+  <nav class="navlinks">
+    <a href="index.html">Home</a>
+    <a href="learn.html">Learn</a>
+    <a href="navigator.html">Insurance Navigator</a>
+    <a href="products.html">Products</a>
+    <a href="quote.html" class="active">Motor quote</a>
+    <a href="enquire.html">Other covers</a>
+  </nav>
+<a href="claim.html">Report a claim</a>
+  </div></header>
+
+<main class="container">
+  <section class="section">
+    <span class="eyebrow">WEB-007 · Quote Intake</span>
+    <h2>Motor insurance quote</h2>
+    <p style="color:var(--color-muted);max-width:60ch">For motorcycles, cars, commercial vehicles and PSVs. The vehicle category only changes how your request is assessed — the questions are the same.</p>
+    <form id="quoteForm" class="question-card" style="max-width:480px">
+      <div class="field">
+        <label for="vehicle_category">Vehicle category</label>
+        <select id="vehicle_category" name="vehicle_category">
+          <option value="MOTORCYCLE">Motorcycle</option>
+          <option value="PRIVATE_CAR">Private car</option>
+          <option value="COMMERCIAL_VEHICLE">Commercial vehicle</option>
+          <option value="PSV">PSV (matatu / bus)</option>
+          <option value="HIRE_REWARD">Hire / reward (taxi, boda boda)</option>
+          <option value="OTHER">Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="usage_type">How is it used?</label>
+        <select id="usage_type" name="usage_type">
+          <option value="private">Private / personal</option>
+          <option value="commercial">Commercial / business</option>
+          <option value="hire_reward">Hire or reward</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="cover_type">Cover type</label>
+        <select id="cover_type" name="cover_type">
+          <option value="THIRD_PARTY">Third Party</option>
+          <option value="COMPREHENSIVE">Comprehensive</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="duration">Duration</label>
+        <select id="duration" name="duration">
+          <option value="ANNUAL">Annual</option>
+          <option value="MONTHLY">Monthly</option>
+          <option value="WEEKLY">Weekly</option>
+        </select>
+      </div>
+      <div class="field" id="valueField">
+        <label for="vehicle_value_kes">Current value of the motorcycle (KES)</label>
+        <input type="number" id="vehicle_value_kes" name="vehicle_value_kes" placeholder="e.g. 150000">
+      </div>
+      <div class="field"><label for="contact_name">Your name</label><input type="text" id="contact_name" name="contact_name" required></div>
+      <div class="field"><label for="contact_phone">WhatsApp / phone number</label><input type="text" id="contact_phone" name="contact_phone" placeholder="07xx xxx xxx" required></div>
+      <div class="field"><label style="display:flex;gap:8px;font-weight:500"><input type="checkbox" id="consent" required style="width:auto"> I agree to my details being used to prepare and follow up this quote.</label></div>
+      <button type="submit" class="btn btn-primary" style="width:100%">Get quote</button>
+    </form>
+
+    <div id="result" style="margin-top:24px"></div>
+  </section>
+</main>
+
+<script src="shared/api.js"></script>
+<script>
+const coverSelect = document.getElementById("cover_type");
+const valueField = document.getElementById("valueField");
+function syncValueField() {
+  valueField.style.display = coverSelect.value === "COMPREHENSIVE" ? "block" : "none";
+}
+coverSelect.addEventListener("change", syncValueField);
+syncValueField();
+
+document.getElementById("quoteForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = new FormData(e.target);
+  const input = {
+    product_id: form.get("cover_type") === "COMPREHENSIVE" ? "MOT-COMP-001" : "MOT-TP-001",
+    vehicle_category: form.get("vehicle_category"),
+    usage_type: form.get("usage_type"),
+    contact_name: form.get("contact_name"),
+    contact_phone: form.get("contact_phone"),
+    consent_given: document.getElementById("consent").checked,
+    cover_type: form.get("cover_type"),
+    duration: form.get("duration"),
+    vehicle_value_kes: form.get("vehicle_value_kes") ? Number(form.get("vehicle_value_kes")) : undefined,
+  };
+  const result = document.getElementById("result");
+  result.innerHTML = `<p style="color:var(--color-muted)">Requesting quote…</p>`;
+  try {
+    const { quote, decision_trace_id } = await Api.decideQuote(input);
+    const chargesRows = quote.charges.map((c) =>
+      `<dt>${c.charge_id}</dt><dd>${c.status === "SOURCE_DATED_2010_RULE" ? c.rate_or_amount : c.status}</dd>`
+    ).join("");
+    result.innerHTML = `
+      <div class="quote-summary">
+        <span class="status-pill status-${quote.status}">${quote.status}</span>
+        <h3>Quote ${quote.quote_id.slice(0, 8)}</h3>
+        <dl>
+          <dt>Premium</dt><dd>${quote.premium_kes ?? "Pending configuration"}</dd>
+          ${chargesRows}
+        </dl>
+        ${quote.status !== "QUOTED" ? `
+          <div class="disclosure">
+            ${quote.status === "REFERRED" && ["COMMERCIAL_VEHICLE","PSV","HIRE_REWARD","OTHER"].includes(input.vehicle_category)
+              ? "This vehicle category needs a quick review before a final quote. An adviser will contact you on the number you gave."
+              : quote.status === "DRAFT"
+              ? "We still need the vehicle's current value before we can proceed with a comprehensive quote."
+              : "This product's approved rate table hasn't been loaded yet, so we can't show a final premium. Your request has been sent to an adviser to complete with the insurer's approved rates — nothing here is estimated or guessed."}
+          </div>` : ""}
+        <p style="font-size:12px;color:var(--color-muted)">Decision trace: ${decision_trace_id}</p>
+      </div>`;
+  } catch (err) {
+    result.innerHTML = `<div class="card"><h3>Couldn't get a quote</h3><p>${err.message}</p></div>`;
+  }
+});
+</script>
+</body>
+</html>

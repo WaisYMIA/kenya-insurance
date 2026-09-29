@@ -1,0 +1,21 @@
+# For your own networked environment (not run in this sandbox — no egress here).
+# Brings up Postgres + Redis so the repository interface in services/api can be swapped
+# from InMemoryRepository to a real Postgres implementation.
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: kenya_insurance
+      POSTGRES_USER: kenya_insurance
+      POSTGRES_PASSWORD: change_me_in_env
+    ports: ["5432:5432"]
+    volumes:
+      - ./../db/migrations:/docker-entrypoint-initdb.d/migrations
+      - ./../db/seed:/docker-entrypoint-initdb.d/seed
+      - pgdata:/var/lib/postgresql/data
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+volumes:
+  pgdata:

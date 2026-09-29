@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Explorer</title>
+<link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+<header class="header"><div class="header-inner">
+  <div class="logo">bima<span>hub</span></div>
+  <nav class="navlinks">
+    <a href="index.html">Home</a>
+    <a href="learn.html">Learn</a>
+    <a href="navigator.html">Insurance Navigator</a>
+    <a href="products.html" class="active">Products</a>
+    <a href="quote.html">Motor quote</a>
+    <a href="enquire.html">Other covers</a>
+  </nav>
+<a href="claim.html">Report a claim</a>
+  </div></header>
+
+<main class="container">
+  <section class="section">
+    <span class="eyebrow">WEB-006 · Product Explorer</span>
+    <h2>Approved products</h2>
+    <p style="color:var(--color-muted);max-width:60ch">Pulled live from the Product Service —
+      nothing on this page is hard-coded into the site.</p>
+    <div id="products" class="grid grid-3" style="margin-top:24px"></div>
+  </section>
+</main>
+
+<script src="shared/api.js"></script>
+<script>
+(async function () {
+  const el = document.getElementById("products");
+  try {
+    const { products } = await Api.listProducts();
+    el.innerHTML = products.map((p) => `
+      <div class="card product-card">
+        <span class="badge">${p.version.status}</span>
+        <h3>${p.product_name}</h3>
+        <p>${p.regulatory_class || p.product_family}</p>
+        <p style="font-size:12px">Version ${p.version.version_label} · effective ${p.version.effective_from}</p>
+      </div>`).join("");
+  } catch (e) {
+    el.innerHTML = `<div class="card"><h3>Couldn't load products</h3>
+      <p>Is the API running at ${window.API_BASE}? (${e.message})</p></div>`;
+  }
+})();
+</script>
+</body>
+</html>

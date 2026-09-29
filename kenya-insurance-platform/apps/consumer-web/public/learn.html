@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learn about insurance</title>
+<link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+<header class="header"><div class="header-inner">
+  <div class="logo">bima<span>hub</span></div>
+  <nav class="navlinks">
+    <a href="index.html">Home</a><a href="learn.html" class="active">Learn</a><a href="navigator.html">Insurance Navigator</a>
+    <a href="products.html">Products</a><a href="quote.html">Motor quote</a><a href="enquire.html">Other covers</a><a href="claim.html">Report a claim</a>
+  </nav>
+</div></header>
+<main class="container"><section class="section">
+  <span class="eyebrow">Learn</span>
+  <h2>Insurance classes, in plain language</h2>
+  <p style="color:var(--color-muted);max-width:60ch">Every class below is a real category of cover available in Kenya. Pick one to see what it's for and how many products we track in it.</p>
+  <div id="classes" class="grid grid-3" style="margin-top:24px"></div>
+</section></main>
+<script src="shared/api.js"></script>
+<script>
+const DEFAULT_INTRO = {
+  "Motor Private": "Covers your personal car or motorcycle against accident, theft and third-party liability.",
+  "Motor Commercial": "Covers vehicles used for business, haulage, PSV or hire — usually needs closer underwriting.",
+  "Fire Domestic": "Covers your home — the building and/or its contents — against fire and other perils.",
+  "Fire Industrial/Commercial": "Covers business premises, stock and equipment against fire and allied perils.",
+  "Medical": "Covers hospital and outpatient costs for you, your family or your employees.",
+  "Personal Accident": "Pays out if you're injured or disabled in an accident, regardless of who was at fault.",
+  "Workmen's Compensation / Employer's Liability": "Covers an employer's legal liability for employees injured at work (WIBA).",
+  "Engineering": "Covers machinery, equipment and construction/erection risks.",
+  "Liability": "Covers your legal liability to third parties for injury or property damage.",
+  "Marine & Transit": "Covers goods while being transported by sea, air or land.",
+  "Aviation": "Covers aircraft, hull and aviation liability risks.",
+  "Theft": "Covers loss of property through burglary or theft.",
+  "Miscellaneous": "Other specialised covers that don't fit the classes above — ask an adviser.",
+};
+(async () => {
+  const el = document.getElementById("classes");
+  try {
+    const { classes } = await Api.getLearn();
+    el.innerHTML = classes.map((c) => `
+      <div class="card">
+        <span class="badge" style="color:var(--color-primary);background:var(--color-surface-2);font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;display:inline-block;margin-bottom:6px">${c.product_count} product${c.product_count === 1 ? "" : "s"}</span>
+        <h3>${c.name}</h3><p>${c.intro || DEFAULT_INTRO[c.name] || "Ask an adviser for details on this class."}</p>
+        <a href="enquire.html?line=${c.name === "Medical" ? "MEDICAL" : c.name === "Workmen's Compensation / Employer's Liability" ? "WIBA" : c.name.startsWith("Fire Domestic") ? "HOME" : "GENERAL"}" class="btn btn-ghost" style="margin-top:8px;display:inline-block">Get guidance →</a>
+      </div>`).join("");
+  } catch (e) { el.innerHTML = `<div class="card"><h3>Couldn't load</h3><p>${e.message}</p></div>`; }
+})();
+</script>
+</body>
+</html>

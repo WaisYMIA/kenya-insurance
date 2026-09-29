@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Adviser inbox</title>
+<link rel="stylesheet" href="shared/styles.css">
+<style>
+  .split{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:16px;align-items:start}
+  @media(max-width:760px){.split{grid-template-columns:1fr}}
+  .lead-row{padding:12px;border:1px solid var(--color-line);border-radius:var(--radius-md);background:var(--color-surface);cursor:pointer;margin-bottom:8px}
+  .lead-row:hover,.lead-row.sel{background:var(--color-surface-2)}
+  .lead-row small{color:var(--color-muted)}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--color-surface-2);margin-right:4px}
+  .pill.NEW{background:var(--color-warn-bg);color:var(--color-warn-text)}
+  table.kv{width:100%;border-collapse:collapse;font-size:14px} table.kv td{padding:6px 4px;border-bottom:1px solid var(--color-line);vertical-align:top} table.kv td:first-child{color:var(--color-muted);width:38%}
+  textarea{width:100%;padding:10px;border-radius:var(--radius-md);border:1px solid var(--color-line);background:var(--color-surface);color:var(--color-text);font:inherit}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+</style>
+</head>
+<body>
+<header class="header"><div class="header-inner">
+  <div class="logo">bima<span>hub</span> <small style="font-weight:500;color:var(--color-muted)">staff</small></div>
+  <nav class="navlinks"><a href="index.html">Public site</a><a href="#" id="navInbox" class="active">Inbox</a><a href="#" id="navClaims" hidden>Claims</a><a href="#" id="navRenewals" hidden>Renewals</a><a href="#" id="navAnalytics" hidden>Analytics</a><a href="#" id="navAdmin" hidden>Admin</a><a href="#" id="logout" hidden>Sign out</a></nav>
+</div></header>
+<main class="container"><section class="section">
+  <div id="login" class="question-card" hidden>
+    <h3>Staff sign-in</h3>
+    <form id="loginForm">
+      <div class="field"><label for="em">Email</label><input type="text" id="em" autocomplete="username" required></div>
+      <div class="field"><label for="pw">Password</label><input type="password" id="pw" autocomplete="current-password" required style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--color-line);background:var(--color-surface);color:var(--color-text)"></div>
+      <button class="btn btn-primary" style="width:100%">Sign in</button>
+      <div id="loginErr" style="color:#b3261e;margin-top:8px"></div>
+    </form>
+  </div>
+
+  <div id="app" hidden>
+    <div id="tabInbox">
+    <div class="row">
+      <h2 style="margin:0;flex:1">Lead inbox</h2>
+      <select id="fStatus" style="width:auto"><option value="">All statuses</option><option>NEW</option><option>NOTIFIED</option><option>IN_REVIEW</option><option>CLOSED</option></select>
+      <select id="fLine" style="width:auto"><option value="">All covers</option><option>MOTOR</option><option>MEDICAL</option><option>WIBA</option><option>LIFE</option><option>HOME</option><option>TRAVEL</option><option>PENSION_ANNUITIES</option><option>GENERAL</option></select>
+      <button class="btn btn-ghost" id="refresh">Refresh</button>
+    </div>
+    <div class="split"><div id="list"></div><div id="detail" class="card"><p>Select a lead.</p></div></div>
+    </div>
+    <div id="tabClaims" hidden></div>
+    <div id="tabRenewals" hidden></div>
+    <div id="tabAnalytics" hidden></div>
+    <div id="tabAdmin" hidden></div>
+  </div>
+</section></main>
+<script src="shared/api.js"></script>
+<script>
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+let token = sessionStorage.getItem("staff_token"), me = null, selected = null;
+const $ = (id) => document.getElementById(id);
+
+async function call(path, opts = {}) {
+  const res = await fetch(window.API_BASE + path, { method: opts.method || "GET", headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && token) { signOut(); }
+  if (!res.ok) { const e = new Error(data.error || res.status); e.data = data; throw e; }
+  return data;
+}
+function signOut() { token = null; sessionStorage.removeItem("staff_token"); $("app").hidden = true; $("logout").hidden = true; $("login").hidden = false; }
+
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault(); $("loginErr").textContent = "";
+  try {
+    const r = await call("/v1/auth/login", { method: "POST", body: { email: $("em").value.trim(), password: $("pw").value } });
+    token = r.token; me = r.user; sessionStorage.setItem("staff_token", token); $("pw").value = ""; start();
+  } catch (err) { $("loginErr").textContent = err.message === "RATE_LIMITED" ? "Too many attempts — wait a few minutes." : "Invalid email or password."; }
+});
+$("logout").addEventListener("click", (e) => { e.preventDefault(); signOut(); });
+$("refresh").addEventListener("click", loadList); $("fStatus").addEventListener("change", loadList); $("fLine").addEventListener("change", loadList);
+
+async function start() {
+  try { me = me || (await call("/v1/auth/me")); } catch { return signOut(); }
+  $("login").hidden = true; $("app").hidden = false; $("logout").hidden = false;
+  loadList();
+}
+
+async function loadList() {
+  const q = new URLSearchParams(); if ($("fStatus").value) q.set("status", $("fStatus").value); if ($("fLine").value) q.set("line", $("fLine").value);
+  const { leads } = await call("/v1/leads?" + q);
+  $("list").innerHTML = leads.length ? leads.map((l) => `
+    <div class="lead-row ${selected === l.lead_id ? "sel" : ""}" data-id="${esc(l.lead_id)}">
+      <span class="pill ${esc(l.status)}">${esc(l.status)}</span><span class="pill">${esc(l.product_line)}</span><span class="pill">${esc(l.source_channel)}</span><br>
+      <strong>${esc(l.contact_name)}</strong><br><small>${esc(l.contact_phone)} · ${new Date(l.created_at).toLocaleString()}</small>
+    </div>`).join("") : "<p>No leads yet.</p>";
+  document.querySelectorAll(".lead-row").forEach((el) => el.addEventListener("click", () => openLead(el.dataset.id)));
+}
+
+function waLink(phone) { let d = String(phone).replace(/\D/g, ""); if (d.startsWith("0")) d = "254" + d.slice(1); return "https://wa.me/" + d; }
+
+async function openLead(id) {
+  selected = id;
+  const { lead, notes, documents } = await call("/v1/leads/" + id);
+  const rows = Object.entries(lead.answers).filter(([k]) => !k.startsWith("_")).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(typeof v === "string" ? v : JSON.stringify(v))}</td></tr>`).join("");
+  $("detail").innerHTML = `
+    <h3 style="margin-top:0">${esc(lead.contact_name)} <span class="pill">${esc(lead.product_line)}</span></h3>
+    <div class="row"><a class="btn btn-primary" target="_blank" rel="noopener" href="${esc(waLink(lead.contact_phone))}">💬 WhatsApp ${esc(lead.contact_phone)}</a>
+      ${lead.contact_email ? `<a class="btn btn-ghost" href="mailto:${esc(lead.contact_email)}">✉️ Email</a>` : ""}</div>
+    <div class="row"><label style="margin:0">Status</label>
+      <select id="dStatus" style="width:auto">${["NEW", "NOTIFIED", "IN_REVIEW", "CLOSED"].map((s) => `<option ${s === lead.status ? "selected" : ""}>${s}</option>`).join("")}</select>
+      <input type="text" id="dAssign" placeholder="Assigned to" value="${esc(lead.assigned_to || "")}" style="width:160px">
+      <button class="btn btn-ghost" id="dSave">Save</button></div>
+    <table class="kv">${rows}</table>
+    ${documents.length ? `<h4>Documents received (${documents.length})</h4><table class="kv">${documents.map((d) => `<tr><td>${esc(d.doc_type)}</td><td>${esc(d.status)} — ${esc(d.mime || "")}</td></tr>`).join("")}</table>` : ""}
+    <h4>Notes</h4>
+    ${notes.map((n) => `<p style="font-size:14px"><strong>${esc(n.author)}</strong> <small>${new Date(n.created_at).toLocaleString()}</small><br>${esc(n.text)}</p>`).join("") || "<p style='color:var(--color-muted)'>No notes.</p>"}
+    <textarea id="dNote" rows="2" placeholder="Add a note…"></textarea>
+    <div class="row"><button class="btn btn-primary" id="dAddNote">Add note</button></div>
+    <small style="color:var(--color-muted)">Lead ${esc(lead.lead_id)}${lead.answers._consent ? " · consent " + esc(lead.answers._consent.version) : ""}</small>`;
+  $("dSave").onclick = async () => { await call("/v1/leads/" + id, { method: "PATCH", body: { status: $("dStatus").value, assigned_to: $("dAssign").value.trim() || null } }); await loadList(); openLead(id); };
+  $("dAddNote").onclick = async () => { const t = $("dNote").value.trim(); if (!t) return; await call(`/v1/leads/${id}/notes`, { method: "POST", body: { text: t } }); openLead(id); };
+  loadList();
+}
+
+if (token) start(); else $("login").hidden = false;
+</script>
+<script src="shared/staff-admin.js"></script>
+</body>
+</html>
